@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEGI Predictor| Color-based PEGI Predictor</title>
+
+    <!-- Google Fonts: Outfit per i titoli, Inter per il testo -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- Foglio di stile CSS esterno -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <header>
+        <h1>PEGI Predictor</h1>
+        <p class="subtitle">Predizione del rating d'età PEGI basata sull'estrazione non supervisionata di feature
+            cromatiche dalle copertine di Steam e i metadati di prezzo e genere.</p>
+    </header>
+
+    <main>
+        <!-- Pannello di Input (Sinistro) -->
+        <div class="card">
+            <h2 class="section-title"><span></span>Dati di Input</h2>
+
+            <form id="predict-form" enctype="multipart/form-data">
+                <!-- Dropzone Caricamento Immagine -->
+                <div class="form-group">
+                    <label>Immagine di Copertina (Header Image)</label>
+                    <div class="upload-container" id="dropzone">
+                        <input type="file" id="image-file" name="image" accept="image/*" style="display: none;">
+                        <img id="image-preview" alt="Preview dell'immagine caricata">
+                        <button type="button" class="remove-img-btn" id="remove-img">Rimuovi</button>
+
+                        <div class="upload-info" id="upload-info-box">
+                            <div class="upload-icon">🖼️</div>
+                            <div class="upload-text">Trascina qui l'immagine di copertina</div>
+                            <div class="upload-subtext">o clicca per sfogliare i file (PNG, JPG, WEBP)</div>
+                        </div>
+                    </div>
+                </div>
+
+
+
+                <!-- Selettore Generi (Multi-select Chips) -->
+                <div class="form-group genres-group" style="margin-top: 0.5rem;">
+                    <label>Generi del Gioco (Seleziona uno o più)</label>
+                    <div class="genres-grid" id="genres-wrapper">
+                        <!-- Generi popolati dinamicamente via JS per allinearsi con il modello -->
+                    </div>
+                </div>
+
+                <!-- Bottone Predict -->
+                <button type="submit" class="btn-predict" style="margin-top: 1.5rem; width: 100%;">
+                    <span></span> Esegui Predizione PEGI
+                </button>
+            </form>
+        </div>
+
+        <!-- Pannello Risultati (Destro) -->
+        <div class="card" style="justify-content: flex-start;">
+            <h2 class="section-title"><span></span>Risultato Modello</h2>
+
+            <!-- Stato iniziale: placeholder -->
+            <div class="result-placeholder" id="placeholder-box">
+                <div class="pulse-circle">
+                    <img src="{{ url_for('static', filename='pegi/pegionline.jpg') }}" alt="PEGI logo"
+                        class="pulse-icon-img">
+                </div>
+                <p>Nessun dato analizzato. Carica una copertina, imposta i metadati e clicca su "Esegui Predizione" per
+                    avviare il classificatore XGBoost.</p>
+            </div>
+
+            <!-- Stato caricamento -->
+            <div class="loading-container" id="loading-box">
+                <div class="spinner"></div>
+                <p style="font-size: 0.95rem; color: var(--text-muted);">Estrazione feature colore in LAB e calcolo
+                    predizione in corso...</p>
+            </div>
+
+            <!-- Stato Risultato Pronto -->
+            <div class="result-content" id="result-box">
+
+                <!-- Badge PEGI Predetto -->
+                <div class="pegi-hero">
+                    <img id="res-pegi-badge" class="pegi-badge-img" src="" alt="PEGI rating">
+                    <div class="pegi-info-text">
+                        <span class="pegi-label-title">Predizione Ensemble</span>
+                        <span class="pegi-class-title" id="res-pegi-title">PEGI 18</span>
+                    </div>
+                </div>
+
+                <!-- Dominant Colors (5 cluster cromatici del K-Means) -->
+                <div class="form-group">
+                    <label>5 Colori Dominanti Rilevati (LAB -> RGB)</label>
+                    <div class="palette-list" id="res-palette-list">
+                        <!-- Popolato dinamicamente da JS -->
+                    </div>
+                </div>
+
+                <!-- Class Probabilities -->
+                <div class="form-group">
+                    <label>Probabilità di Classificazione per Classe PEGI</label>
+                    <div class="prob-list" id="res-prob-list">
+                        <!-- Popolato dinamicamente da JS -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+
+
+    <!-- Logica JavaScript per interattività e chiamata API -->
+    <script>
+        // Lista dei generi supportati dal modello XGBoost
+        const genres = [
+            'Action', 'Adventure', 'Animation & Modeling', 'Audio Production', 'Casual',
+            'Design & Illustration', 'Early Access', 'Education', 'Free To Play',
+            'Game Development', 'Gore', 'Indie', 'Massively Multiplayer', 'Nudity',
+            'Photo Editing', 'RPG', 'Racing', 'Sexual Content', 'Simulation',
+            'Software Training', 'Sports', 'Strategy', 'Utilities', 'Video Production',
+            'Violent', 'Web Publishing'
+        ];
+
+        // Mappatura descrittiva dei PEGI
+        const pegiDescriptions = {
+            3: "Adatto a tutte le età. Contiene solo violenza molto lieve in contesti comici.",
+            7: "Adatto ai bambini. Può contenere scene o suoni spaventosi, o violenza lieve.",
+            12: "Adatto a un pubblico dai 12 anni in su. Mostra violenza di stampo fantasy o non realistica.",
+            16: "Adatto ai ragazzi. Presenta violenza realistica, linguaggio scurrile o allusività sessuale.",
+            18: "Destinato esclusivamente ad adulti. Contiene violenza esplicita, attività illegali o nudità."
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const genresWrapper = document.getElementById('genres-wrapper');
+            const priceRange = document.getElementById('price-range');
+            const priceNumber = document.getElementById('price-number');
+            const dropzone = document.getElementById('dropzone');
+            const fileInput = document.getElementById('image-file');
+            const imagePreview = document.getElementById('image-preview');
+            const removeImgBtn = document.getElementById('remove-img');
+            const uploadInfoBox = document.getElementById('upload-info-box');
+            const predictForm = document.getElementById('predict-form');
+
+            // Box di stato destro
+            const placeholderBox = document.getElementById('placeholder-box');
+            const loadingBox = document.getElementById('loading-box');
+            const resultBox = document.getElementById('result-box');
+
+            // 1. Popola dinamicamente i generi nella UI
+            genres.forEach(genre => {
+                const chip = document.createElement('div');
+                chip.className = 'genre-chip';
+                chip.textContent = genre;
+                chip.dataset.genre = genre;
+                chip.addEventListener('click', () => {
+                    chip.classList.toggle('selected');
+                });
+                genresWrapper.appendChild(chip);
+            });
+
+
+
+            // 3. Gestione drag-and-drop dell'immagine
+            dropzone.addEventListener('click', () => fileInput.click());
+
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            });
+
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.classList.remove('dragover');
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+
+            function handleFile(file) {
+                if (!file.type.startsWith('image/')) {
+                    alert("Carica solo file di tipo immagine!");
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    removeImgBtn.style.display = 'block';
+                    dropzone.classList.add('preview-active');
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Rimozione dell'immagine caricata
+            removeImgBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Evita di attivare il click sulla dropzone
+                fileInput.value = '';
+                imagePreview.src = '';
+                imagePreview.style.display = 'none';
+                removeImgBtn.style.display = 'none';
+                dropzone.classList.remove('preview-active');
+            });
+
+            // 4. Invio del Form per predizione al server Flask
+            predictForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                // Validazione file immagine obbligatorio
+                if (!fileInput.files.length) {
+                    alert("Per favore, carica un'immagine di copertina per calcolare le feature cromatiche.");
+                    return;
+                }
+
+                // Cambio di stato UI a "Caricamento"
+                placeholderBox.style.display = 'none';
+                resultBox.classList.remove('show');
+                loadingBox.style.display = 'flex';
+
+                // Costruzione FormData per la chiamata API
+                const formData = new FormData();
+                formData.append('image', fileInput.files[0]);
+
+                // Recupero generi selezionati
+                const selectedChips = document.querySelectorAll('.genre-chip.selected');
+                selectedChips.forEach(chip => {
+                    formData.append('genres', chip.dataset.genre);
+                });
+
+                try {
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        renderResults(data);
+                    } else {
+                        alert("Errore del server: " + data.error);
+                        resetToInitialState();
+                    }
+
+                } catch (error) {
+                    console.error("Errore durante la chiamata API:", error);
+                    alert("Si è verificato un errore di connessione con il server Flask.");
+                    resetToInitialState();
+                }
+            });
+
+            function resetToInitialState() {
+                loadingBox.style.display = 'none';
+                resultBox.classList.remove('show');
+                placeholderBox.style.display = 'flex';
+            }
+
+            function renderResults(data) {
+                // Nascondi caricamento
+                loadingBox.style.display = 'none';
+
+                // Configura badge PEGI con immagine ufficiale
+                const badge = document.getElementById('res-pegi-badge');
+                const title = document.getElementById('res-pegi-title');
+
+                const pegiVal = data.pegi_val;
+                // Sostituisce il src con il PNG PEGI corretto in base alla predizione
+                badge.src = `/static/pegi/pegi${pegiVal}.png`;
+                badge.alt = `PEGI ${pegiVal}`;
+
+                // Mostra il titolo
+                title.textContent = data.prediction;
+
+                // Render dei 5 Colori Dominanti
+                const paletteList = document.getElementById('res-palette-list');
+                paletteList.innerHTML = '';
+
+                data.palette.forEach((color, idx) => {
+                    const rgbString = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                    const item = document.createElement('div');
+                    item.className = 'palette-item';
+                    item.title = `Colore #${idx + 1} Dominante`;
+                    item.innerHTML = `
+                        <div class="color-pill" style="background-color: ${rgbString};"></div>
+                        <div class="color-details">
+                            <span class="color-rgb-val">${color.r}, ${color.g}, ${color.b}</span>
+                        </div>
+                        <div class="color-percentage-box">${color.percentage}%</div>
+                    `;
+                    paletteList.appendChild(item);
+                });
+
+                // Render delle Probabilità di Classe PEGI
+                const probList = document.getElementById('res-prob-list');
+                probList.innerHTML = '';
+
+                // Cerchiamo qual è la classe predetta per evidenziarla
+                const winningClass = data.prediction;
+
+                // Ordina le chiavi PEGI numericamente
+                const sortedPegiKeys = ['PEGI 3', 'PEGI 7', 'PEGI 12', 'PEGI 16', 'PEGI 18'];
+
+                sortedPegiKeys.forEach(pegiKey => {
+                    const probability = data.probabilities[pegiKey] || 0.0;
+                    const isWinner = pegiKey === winningClass;
+                    const item = document.createElement('div');
+                    item.className = `prob-item ${isWinner ? 'winner' : ''}`;
+
+                    item.innerHTML = `
+                        <div class="prob-meta">
+                            <span class="prob-label">${pegiKey}</span>
+                            <span class="prob-val">${probability}%</span>
+                        </div>
+                        <div class="prob-bar-bg">
+                            <div class="prob-bar-fill" style="width: 0%;"></div>
+                        </div>
+                    `;
+
+                    probList.appendChild(item);
+
+                    // Animiamo il riempimento della barra con un leggero delay per rendere l'interfaccia viva
+                    setTimeout(() => {
+                        item.querySelector('.prob-bar-fill').style.width = `${probability}%`;
+                    }, 50);
+                });
+
+                // Mostra il pannello dei risultati con effetto dissolvenza
+                resultBox.classList.add('show');
+            }
+        });
+    </script>
+</body>
+
+</html>
