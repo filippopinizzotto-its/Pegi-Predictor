@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PEGI Predictor| Color-based PEGI Predictor</title>
+    <title>PEGI Predictor | Tag-based PEGI Predictor</title>
 
     <!-- Google Fonts: Outfit per i titoli, Inter per il testo -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -21,8 +21,7 @@
 
     <header>
         <h1>PEGI Predictor</h1>
-        <p class="subtitle">Predizione del rating d'età PEGI basata sull'estrazione non supervisionata di feature
-            cromatiche dalle copertine di Steam e i metadati di prezzo e genere.</p>
+        <p class="subtitle">Predizione del rating d'età PEGI basata sui tag descrittivi del gioco selezionati dall'utente.</p>
     </header>
 
     <main>
@@ -31,30 +30,14 @@
             <h2 class="section-title"><span></span>Dati di Input</h2>
 
             <form id="predict-form" enctype="multipart/form-data">
-                <!-- Dropzone Caricamento Immagine -->
-                <div class="form-group">
-                    <label>Immagine di Copertina (Header Image)</label>
-                    <div class="upload-container" id="dropzone">
-                        <input type="file" id="image-file" name="image" accept="image/*" style="display: none;">
-                        <img id="image-preview" alt="Preview dell'immagine caricata">
-                        <button type="button" class="remove-img-btn" id="remove-img">Rimuovi</button>
-
-                        <div class="upload-info" id="upload-info-box">
-                            <div class="upload-icon">🖼️</div>
-                            <div class="upload-text">Trascina qui l'immagine di copertina</div>
-                            <div class="upload-subtext">o clicca per sfogliare i file (PNG, JPG, WEBP)</div>
-                        </div>
+                <!-- Selettore Tag (Multi-select Chips) -->
+                <div class="form-group tags-group">
+                    <label>Tag del Gioco (Seleziona uno o più)</label>
+                    <input type="text" id="tag-search" class="tag-search" placeholder="Cerca un tag..." autocomplete="off">
+                    <div class="genres-grid" id="tags-wrapper">
+                        <!-- Tag popolati dinamicamente via JS -->
                     </div>
-                </div>
-
-
-
-                <!-- Selettore Generi (Multi-select Chips) -->
-                <div class="form-group genres-group" style="margin-top: 0.5rem;">
-                    <label>Generi del Gioco (Seleziona uno o più)</label>
-                    <div class="genres-grid" id="genres-wrapper">
-                        <!-- Generi popolati dinamicamente via JS per allinearsi con il modello -->
-                    </div>
+                    <div class="tag-counter" id="tag-counter"></div>
                 </div>
 
                 <!-- Bottone Predict -->
@@ -74,15 +57,13 @@
                     <img src="{{ url_for('static', filename='pegi/pegionline.jpg') }}" alt="PEGI logo"
                         class="pulse-icon-img">
                 </div>
-                <p>Nessun dato analizzato. Carica una copertina, imposta i metadati e clicca su "Esegui Predizione" per
-                    avviare il classificatore XGBoost.</p>
+                <p>Nessun dato analizzato. Seleziona uno o più tag e clicca su "Esegui Predizione" per avviare il classificatore Random Forest.</p>
             </div>
 
             <!-- Stato caricamento -->
             <div class="loading-container" id="loading-box">
                 <div class="spinner"></div>
-                <p style="font-size: 0.95rem; color: var(--text-muted);">Estrazione feature colore in LAB e calcolo
-                    predizione in corso...</p>
+                <p style="font-size: 0.95rem; color: var(--text-muted);">Elaborazione tag e calcolo predizione in corso...</p>
             </div>
 
             <!-- Stato Risultato Pronto -->
@@ -92,16 +73,8 @@
                 <div class="pegi-hero">
                     <img id="res-pegi-badge" class="pegi-badge-img" src="" alt="PEGI rating">
                     <div class="pegi-info-text">
-                        <span class="pegi-label-title">Predizione Ensemble</span>
+                        <span class="pegi-label-title">Predizione Random Forest</span>
                         <span class="pegi-class-title" id="res-pegi-title">PEGI 18</span>
-                    </div>
-                </div>
-
-                <!-- Dominant Colors (5 cluster cromatici del K-Means) -->
-                <div class="form-group">
-                    <label>5 Colori Dominanti Rilevati (LAB -> RGB)</label>
-                    <div class="palette-list" id="res-palette-list">
-                        <!-- Popolato dinamicamente da JS -->
                     </div>
                 </div>
 
@@ -121,15 +94,97 @@
 
     <!-- Logica JavaScript per interattività e chiamata API -->
     <script>
-        // Lista dei generi supportati dal modello XGBoost
-        const genres = [
-            'Action', 'Adventure', 'Animation & Modeling', 'Audio Production', 'Casual',
-            'Design & Illustration', 'Early Access', 'Education', 'Free To Play',
-            'Game Development', 'Gore', 'Indie', 'Massively Multiplayer', 'Nudity',
-            'Photo Editing', 'RPG', 'Racing', 'Sexual Content', 'Simulation',
-            'Software Training', 'Sports', 'Strategy', 'Utilities', 'Video Production',
-            'Violent', 'Web Publishing'
+        // Lista dei tag supportati dal modello Random Forest (nomi inglesi per il modello)
+        const tagsModel = [
+            "1990's", '2.5D', '2D', '3D', '3D Platformer', '4 Player Local', '4X', 'Action', 'Action RPG', 'Action-Adventure', 'Adventure', 'Aliens', 'Anime', 'Arcade', 'Atmospheric', 'Automobile Sim', 'Base Building', "Beat 'em up", 'Beautiful', 'Building', 'Cartoon', 'Cartoony', 'Casual', 'Character Customization', 'Choices Matter', 'Cinematic', 'City Builder', 'Classic', 'Co-op', 'Colorful', 'Combat', 'Comedy', 'Competitive', 'Controller', 'Crafting', 'Crime', 'Cult Classic', 'Cute', 'Cyberpunk', 'Dark', 'Dark Fantasy', 'Dark Humor', 'Detective', 'Difficult', 'Drama', 'Driving', 'Early Access', 'Economy', 'Emotional', 'Exploration', 'FPS', 'Family Friendly', 'Fantasy', 'Fast-Paced', 'Female Protagonist', 'Fighting', 'First-Person', 'Flight', 'Free to Play', 'Funny', 'Futuristic', 'Gore', 'Grand Strategy', 'Great Soundtrack', 'Hack and Slash', 'Hand-drawn', 'Historical', 'Horror', 'Indie', 'Isometric', 'JRPG', 'Local Co-Op', 'Local Multiplayer', 'Magic', 'Management', 'Massively Multiplayer', 'Mature', 'Medieval', 'Memes', 'Metroidvania', 'Military', 'Moddable', 'Multiplayer', 'Multiple Endings', 'Music', 'Mystery', 'No Tags', 'Nudity', 'Old School', 'Online Co-Op', 'Open World', 'Parkour', 'Perma Death', 'Physics', 'Pixel Graphics', 'Platformer', 'Point & Click', 'Post-apocalyptic', 'Procedural Generation', 'Psychological Horror', 'Puzzle', 'Puzzle Platformer', 'PvE', 'PvP', 'RPG', 'RTS', 'Racing', 'Realistic', 'Relaxing', 'Remake', 'Replay Value', 'Resource Management', 'Retro', 'Roguelike', 'Roguelite', 'Sandbox', 'Sci-fi', 'Sexual Content', 'Shooter', 'Short', 'Side Scroller', 'Simulation', 'Singleplayer', 'Soundtrack', 'Space', 'Split Screen', 'Sports', 'Stealth', 'Story Rich', 'Strategy', 'Stylized', 'Survival', 'Survival Horror', 'Tactical', 'Team-Based', 'Third Person', 'Third-Person Shooter', 'Top-Down', 'TrackIR', 'Trains', 'Turn-Based', 'Turn-Based Combat', 'Turn-Based Strategy', 'Turn-Based Tactics', 'VR', 'Violent', 'Visual Novel', 'Walking Simulator', 'War', 'World War II', 'Zombies'
         ];
+
+        // Mappa nomi tag inglese -> italiano per la visualizzazione
+        const tagDisplay = {
+            'Shooter': 'Sparatutto',
+            'Adventure': 'Avventura',
+            'Arcade': 'Arcade',
+            'Action': 'Azione',
+            'Simulation': 'Simulazione',
+            'Strategy': 'Strategia',
+            'Sports': 'Sport',
+            'Horror': 'Horror',
+            'Puzzle': 'Rompicapo',
+            'RPG': 'GDR',
+            'FPS': 'FPS',
+            'Fighting': 'Picchiaduro',
+            'Platformer': 'Platform',
+            'Stealth': 'Furtività',
+            'Survival': 'Sopravvivenza',
+            'Racing': 'Corse',
+            'Sandbox': 'Sandbox',
+            'Open World': 'Mondo Aperto',
+            'Multiplayer': 'Multigiocatore',
+            'Singleplayer': 'Giocatore Singolo',
+            'Co-op': 'Cooperativo',
+            'Free to Play': 'Free to Play',
+            'Early Access': 'Accesso Anticipato',
+            'Violent': 'Violento',
+            'Gore': 'Violenza Esplicita',
+            'Nudity': 'Nudità',
+            'Sexual Content': 'Contenuti Sessuali',
+            'Fantasy': 'Fantasy',
+            'Sci-fi': 'Fantascienza',
+            'Casual': 'Casuale',
+            'Indie': 'Indie',
+            'Controller': 'Controller',
+            'VR': 'Realtà Virtuale',
+            'Music': 'Musica',
+            'Comedy': 'Commedia',
+            'Drama': 'Drammatico',
+            'Mystery': 'Mistero',
+            'Detective': 'Investigativo',
+            'Atmospheric': 'Atmosferico',
+            'Exploration': 'Esplorazione',
+            'Crafting': 'Artigianato',
+            'Building': 'Costruzione',
+            'Management': 'Gestione',
+            'Economy': 'Economia',
+            'Resource Management': 'Gestione Risorse',
+            'City Builder': 'City Builder',
+            'Base Building': 'Costruzione Basi',
+            'Flight': 'Volo',
+            'Driving': 'Guida',
+            'Space': 'Spazio',
+            'War': 'Guerra',
+            'Military': 'Militare',
+            'Historical': 'Storico',
+            'Medieval': 'Medievale',
+            'Retro': 'Retro',
+            'Pixel Graphics': 'Grafica Pixel',
+            'Cartoon': 'Cartoon',
+            'Cartoony': 'Stile Fumetto',
+            'Colorful': 'Colorato',
+            'Beautiful': 'Bellissimo',
+            'Dark': 'Oscuro',
+            'Cyberpunk': 'Cyberpunk',
+            'Post-apocalyptic': 'Post-apocalittico',
+            'Zombies': 'Zombie',
+            'Anime': 'Anime',
+            'Cute': 'Carino',
+            'Funny': 'Divertente',
+            'Difficult': 'Difficile',
+            'Relaxing': 'Rilassante',
+            'Competitive': 'Competitivo',
+            'Tactical': 'Tattico',
+            'Roguelike': 'Roguelike',
+            'Roguelite': 'Roguelite',
+            'Metroidvania': 'Metroidvania',
+            'Story Rich': 'Ricco di Storia',
+            'Multiple Endings': 'Finali Multipli',
+            'Choices Matter': 'Scelte Importanti',
+            'Emotional': 'Emozionante',
+            'Great Soundtrack': 'Ottima Colonna Sonora',
+            'Soundtrack': 'Colonna Sonora',
+            'Remake': 'Remake',
+            'Classic': 'Classico',
+            'Old School': 'Vecchia Scuola'
+        };
 
         // Mappatura descrittiva dei PEGI
         const pegiDescriptions = {
@@ -141,14 +196,7 @@
         };
 
         document.addEventListener('DOMContentLoaded', () => {
-            const genresWrapper = document.getElementById('genres-wrapper');
-            const priceRange = document.getElementById('price-range');
-            const priceNumber = document.getElementById('price-number');
-            const dropzone = document.getElementById('dropzone');
-            const fileInput = document.getElementById('image-file');
-            const imagePreview = document.getElementById('image-preview');
-            const removeImgBtn = document.getElementById('remove-img');
-            const uploadInfoBox = document.getElementById('upload-info-box');
+            const tagsWrapper = document.getElementById('tags-wrapper');
             const predictForm = document.getElementById('predict-form');
 
             // Box di stato destro
@@ -156,78 +204,52 @@
             const loadingBox = document.getElementById('loading-box');
             const resultBox = document.getElementById('result-box');
 
-            // 1. Popola dinamicamente i generi nella UI
-            genres.forEach(genre => {
+            // Search bar
+            const tagSearch = document.getElementById('tag-search');
+            const tagCounter = document.getElementById('tag-counter');
+
+            // 1. Popola dinamicamente i tag nella UI
+            const allChips = [];
+            tagsModel.forEach(tag => {
                 const chip = document.createElement('div');
                 chip.className = 'genre-chip';
-                chip.textContent = genre;
-                chip.dataset.genre = genre;
+                chip.textContent = tagDisplay[tag] || tag;
+                chip.dataset.tag = tag;
                 chip.addEventListener('click', () => {
                     chip.classList.toggle('selected');
+                    updateCounter();
                 });
-                genresWrapper.appendChild(chip);
+                tagsWrapper.appendChild(chip);
+                allChips.push(chip);
             });
 
-
-
-            // 3. Gestione drag-and-drop dell'immagine
-            dropzone.addEventListener('click', () => fileInput.click());
-
-            dropzone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropzone.classList.add('dragover');
-            });
-
-            dropzone.addEventListener('dragleave', () => {
-                dropzone.classList.remove('dragover');
-            });
-
-            dropzone.addEventListener('drop', (e) => {
-                e.preventDefault();
-                dropzone.classList.remove('dragover');
-                if (e.dataTransfer.files.length > 0) {
-                    handleFile(e.dataTransfer.files[0]);
-                }
-            });
-
-            fileInput.addEventListener('change', (e) => {
-                if (e.target.files.length > 0) {
-                    handleFile(e.target.files[0]);
-                }
-            });
-
-            function handleFile(file) {
-                if (!file.type.startsWith('image/')) {
-                    alert("Carica solo file di tipo immagine!");
-                    return;
-                }
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    imagePreview.src = e.target.result;
-                    imagePreview.style.display = 'block';
-                    removeImgBtn.style.display = 'block';
-                    dropzone.classList.add('preview-active');
-                };
-                reader.readAsDataURL(file);
+            function updateCounter() {
+                const selected = document.querySelectorAll('.genre-chip.selected').length;
+                const visible = document.querySelectorAll('.genre-chip:not(.hidden)').length;
+                tagCounter.textContent = selected
+                    ? `${selected} selezionati (${visible} visibili)`
+                    : `${visible} tag disponibili`;
             }
 
-            // Rimozione dell'immagine caricata
-            removeImgBtn.addEventListener('click', (e) => {
-                e.stopPropagation(); // Evita di attivare il click sulla dropzone
-                fileInput.value = '';
-                imagePreview.src = '';
-                imagePreview.style.display = 'none';
-                removeImgBtn.style.display = 'none';
-                dropzone.classList.remove('preview-active');
+            tagSearch.addEventListener('input', () => {
+                const q = tagSearch.value.toLowerCase();
+                allChips.forEach(chip => {
+                    const display = chip.textContent.toLowerCase();
+                    chip.classList.toggle('hidden', q && !display.includes(q));
+                });
+                updateCounter();
             });
 
-            // 4. Invio del Form per predizione al server Flask
+            updateCounter();
+
+            // 2. Invio del Form per predizione al server Flask
             predictForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
 
-                // Validazione file immagine obbligatorio
-                if (!fileInput.files.length) {
-                    alert("Per favore, carica un'immagine di copertina per calcolare le feature cromatiche.");
+                // Validazione: almeno un tag selezionato
+                const selectedChips = document.querySelectorAll('.genre-chip.selected');
+                if (!selectedChips.length) {
+                    alert("Per favore, seleziona almeno un tag per effettuare la predizione.");
                     return;
                 }
 
@@ -238,12 +260,8 @@
 
                 // Costruzione FormData per la chiamata API
                 const formData = new FormData();
-                formData.append('image', fileInput.files[0]);
-
-                // Recupero generi selezionati
-                const selectedChips = document.querySelectorAll('.genre-chip.selected');
                 selectedChips.forEach(chip => {
-                    formData.append('genres', chip.dataset.genre);
+                    formData.append('tags', chip.dataset.tag);
                 });
 
                 try {
@@ -289,25 +307,6 @@
 
                 // Mostra il titolo
                 title.textContent = data.prediction;
-
-                // Render dei 5 Colori Dominanti
-                const paletteList = document.getElementById('res-palette-list');
-                paletteList.innerHTML = '';
-
-                data.palette.forEach((color, idx) => {
-                    const rgbString = `rgb(${color.r}, ${color.g}, ${color.b})`;
-                    const item = document.createElement('div');
-                    item.className = 'palette-item';
-                    item.title = `Colore #${idx + 1} Dominante`;
-                    item.innerHTML = `
-                        <div class="color-pill" style="background-color: ${rgbString};"></div>
-                        <div class="color-details">
-                            <span class="color-rgb-val">${color.r}, ${color.g}, ${color.b}</span>
-                        </div>
-                        <div class="color-percentage-box">${color.percentage}%</div>
-                    `;
-                    paletteList.appendChild(item);
-                });
 
                 // Render delle Probabilità di Classe PEGI
                 const probList = document.getElementById('res-prob-list');
