@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Predittore PEGI – Steam Tags</title>
+  <style>
+    /* ─── Reset & Base ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3e;
+      --accent:   #6366f1;
+      --accent2:  #8b5cf6;
+      --text:     #e2e8f0;
+      --muted:    #94a3b8;
+      --pegi3:    #2ecc71;
+      --pegi7:    #3498db;
+      --pegi12:   #f39c12;
+      --pegi16:   #e67e22;
+      --pegi18:   #e74c3c;
+      --radius:   10px;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      padding: 24px 16px 60px;
+    }
+
+    /* ─── Layout ─── */
+    .container { max-width: 1100px; margin: 0 auto; }
+
+    /* ─── Header ─── */
+    header { text-align: center; margin-bottom: 36px; }
+    header h1 {
+      font-size: 2rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    header p { color: var(--muted); font-size: 0.95rem; }
+
+    /* ─── Search bar ─── */
+    .search-wrap { position: relative; margin-bottom: 20px; }
+    #tag-search {
+      width: 100%; padding: 12px 16px 12px 44px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 0.95rem;
+      outline: none; transition: border-color .2s;
+    }
+    #tag-search:focus { border-color: var(--accent); }
+    .search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); opacity: .5; }
+
+    /* ─── Toolbar ─── */
+    .toolbar {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 20px; align-items: center;
+    }
+    .toolbar span { color: var(--muted); font-size: 0.88rem; margin-right: auto; }
+    .btn {
+      padding: 8px 16px; border-radius: 8px; border: none;
+      cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: opacity .2s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost   { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+    .btn-danger  { background: #3d1515; color: #f87171; border: 1px solid #5c1a1a; }
+
+    /* ─── Categorie & Tag Grid ─── */
+    .categories { display: flex; flex-direction: column; gap: 20px; }
+    .category-block {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .category-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+    }
+    .category-header h3 { font-size: 0.92rem; font-weight: 700; letter-spacing: .04em; }
+    .cat-icon { font-size: 1.1rem; margin-right: 8px; }
+    .cat-badge {
+      background: #23263a; color: var(--muted);
+      padding: 2px 8px; border-radius: 12px; font-size: 0.78rem;
+    }
+    .cat-toggle { color: var(--muted); font-size: 0.85rem; transition: transform .2s; }
+    .category-block.collapsed .cat-toggle { transform: rotate(-90deg); }
+    .tags-grid {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 14px 16px;
+    }
+    .category-block.collapsed .tags-grid { display: none; }
+
+    /* ─── Tag Chip ─── */
+    .tag-chip input[type="checkbox"] { display: none; }
+    .tag-chip label {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border-radius: 20px; cursor: pointer;
+      font-size: 0.82rem; font-weight: 500;
+      background: #23263a; border: 1px solid var(--border);
+      color: var(--muted); transition: all .15s;
+      user-select: none;
+    }
+    .tag-chip label:hover { border-color: var(--accent); color: var(--text); }
+    .tag-chip input:checked + label {
+      background: #312e81; border-color: var(--accent);
+      color: #c7d2fe; box-shadow: 0 0 0 2px #6366f130;
+    }
+    .tag-chip.hidden { display: none; }
+
+    /* ─── Selected tags bar ─── */
+    #selected-bar {
+      position: sticky; bottom: 0; left: 0; right: 0;
+      background: #13151f; border-top: 1px solid var(--border);
+      padding: 14px 20px; display: flex; align-items: center;
+      gap: 14px; flex-wrap: wrap; z-index: 100;
+      margin: 0 -16px; /* stretch full width */
+    }
+    #sel-count {
+      font-size: 0.9rem; color: var(--muted); white-space: nowrap;
+    }
+    #sel-count span { color: var(--accent); font-weight: 700; }
+    #btn-predict {
+      padding: 10px 28px; border-radius: 8px; border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; font-weight: 700; font-size: 0.95rem; cursor: pointer;
+      transition: opacity .2s, transform .1s; margin-left: auto;
+    }
+    #btn-predict:hover { opacity: .9; }
+    #btn-predict:active { transform: scale(.97); }
+    #btn-predict:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* ─── Result Modal ─── */
+    #result-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.7); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    #result-overlay.visible { display: flex; }
+    #result-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 32px; width: 90%; max-width: 520px;
+      position: relative; animation: fadeUp .25s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity:0; transform: translateY(20px); }
+      to   { opacity:1; transform: translateY(0); }
+    }
+    #close-result {
+      position: absolute; top: 14px; right: 16px;
+      background: none; border: none; color: var(--muted);
+      font-size: 1.4rem; cursor: pointer; line-height: 1;
+    }
+    #pegi-badge {
+      width: 96px; height: 96px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem; font-weight: 900; color: #fff;
+      margin: 0 auto 16px; box-shadow: 0 4px 20px rgba(0,0,0,.4);
+    }
+    #result-title {
+      text-align: center; font-size: 1.4rem; font-weight: 800; margin-bottom: 6px;
+    }
+    #result-desc {
+      text-align: center; color: var(--muted); font-size: 0.88rem; margin-bottom: 24px;
+    }
+    .prob-row { margin-bottom: 10px; }
+    .prob-label {
+      display: flex; justify-content: space-between;
+      font-size: 0.82rem; margin-bottom: 4px; color: var(--muted);
+    }
+    .prob-label span:last-child { color: var(--text); font-weight: 600; }
+    .prob-bar-bg {
+      background: #23263a; border-radius: 4px; height: 8px; overflow: hidden;
+    }
+    .prob-bar { height: 100%; border-radius: 4px; transition: width .6s ease; }
+    .active-feats {
+      margin-top: 20px; padding: 12px 14px;
+      background: #13151f; border-radius: 8px;
+      font-size: 0.78rem; color: var(--muted); line-height: 1.7;
+    }
+    .active-feats strong { color: var(--text); display: block; margin-bottom: 4px; }
+
+    /* ─── Loading spinner ─── */
+    .spinner {
+      display: inline-block; width: 20px; height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-top-color: #fff; border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Error toast ─── */
+    #toast {
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+      background: #3d1515; color: #f87171; border: 1px solid #5c1a1a;
+      padding: 12px 20px; border-radius: 8px; font-size: 0.88rem;
+      display: none; z-index: 300; max-width: 400px; text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <h1>🎮 Predittore PEGI</h1>
+    <p>Seleziona i tag del tuo videogioco Steam e ottieni la classificazione PEGI predetta dal modello ML</p>
+  </header>
+
+  <!-- Barra di ricerca -->
+  <div class="search-wrap">
+    <svg class="search-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"
+         viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input id="tag-search" type="text" placeholder="Cerca un tag… (es. Action, Horror, Violent)"/>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <span id="total-count">0 tag selezionati</span>
+    <button class="btn btn-ghost" onclick="selectAll()">Seleziona tutti</button>
+    <button class="btn btn-danger" onclick="clearAll()">Rimuovi tutti</button>
+  </div>
+
+  <!-- Categorie di tag -->
+  <div class="categories" id="categories-container">
+
+    {% set categories = [
+      ("⚔️ Genere Principale",       ["Action","Adventure","RPG","JRPG","Strategy","Simulation","Sports","Racing","Horror","Platformer","Puzzle Platformer","Roguelike","Sandbox","Shooter","FPS","Casual","Indie","Arcade"]),
+      ("🎭 Gameplay & Meccaniche",    ["Action RPG","Action Roguelike","Battle Royale","Boss Rush","Building","Card Game","City Builder","Colony Sim","Deckbuilding","Dungeon Crawler","Dungeon Crawler","Escape Room","Hex Grid","Idler","Level Editor","Looter Shooter","Management","Metroidvania","Minigames","Multiple Endings","Mystery Dungeon","On Rails Shooter","Party Based RPG","Perma Death","Precision Platformer","Quick Time Events","Real Time Tactics","Side Scroller","Sokoban","Souls like","Spectacle fighter","Stealth","Tactical RPG","Top Down","Tower Defense","Traditional Roguelike","Turn Based Combat","Twin Stick Shooter"]),
+      ("👥 Modalità & Social",        ["Multiplayer","Local Multiplayer","Massively Multiplayer","Asynchronous Multiplayer","4 Player Local","Team Based","Co op","Party Game"]),
+      ("🖥️ Prospettiva & Controllo",  ["First Person","Third Person","Third Person Shooter","2D","3D","2D Fighter","2D Platformer","6DOF","VR","Asymmetric VR","Controller","TrackIR"]),
+      ("🎨 Stile Visivo & Atmosfera", ["Anime","Atmospheric","Cartoon","Colorful","Comic Book","Cute","Cyberpunk","Dark","Dark Comedy","Dark Humor","Dystopian ","Epic","Experimental","Futuristic","Minimalist","Modern","Pixel Graphics","Post apocalyptic","Retro","Sci fi","Surreal","Voxel"]),
+      ("📖 Narrativa & Tema",         ["Based On A Novel","Capitalism","Choose Your Own Adventure","Choices Matter","Drama","Faith","Fantasy","Female Protagonist","Funny","Heist","Illuminati","Linear","Magic","Mars","Martial Arts","Military","Movie","Multiple Endings","Mythology","Naval Combat","Old School","Parkour","Philosophical","Political","Political Sim","Politics","Post apocalyptic","Superhero","Swordplay","Time Travel","Transhumanism","Vampire","War","Zombies"]),
+      ("🔥 Contenuto & Rating",       ["Blood","Gore","Hentai","Mature","Nudity","Sexual Content","Violent","Gambling","Dark"]),
+      ("🎵 Suono & Extra",             ["Great Soundtrack","Music Based Procedural Generation","Soundtrack","FMV","Trivia"]),
+      ("🛠️ Tecnico & Altro",           ["Artificial Intelligence","Automation","Benchmark","Cult Classic","Design & Illustration","Early Access","Education","Free to Play","Game Development","Hardware","Kickstarter","Life Sim","Logic","Medical Sim","Memes","Moddable","Photo Editing","Physics","Programming","Relaxing","Software","Steam Machine","Tabletop","Trains","Unforgiving","No Tags"]),
+      ("🏃 Sport & Veicoli",           ["ATV","Archery","Baseball","Bikes","Driving","Flight","Golf","Hockey","Horses","Hunting","Jet","Match 3","Mini Golf","Motocross","Offroad","Pinball","Racing","Skateboarding","Skiing","Sports","Wrestling"]),
+    ] %}
+
+    {% for cat_name, cat_tags in categories %}
+    <div class="category-block" data-category="{{ loop.index }}">
+      <div class="category-header" onclick="toggleCategory(this.parentElement)">
+        <h3><span class="cat-icon">{{ cat_name.split(' ')[0] }}</span>{{ cat_name.split(' ', 1)[1] }}</h3>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="cat-badge" id="badge-{{ loop.index }}">0 / {{ cat_tags|length }}</span>
+          <span class="cat-toggle">▼</span>
+        </div>
+      </div>
+      <div class="tags-grid">
+        {% for tag_obj in tags %}
+          {% if tag_obj.label.strip() in cat_tags %}
+          <div class="tag-chip" data-label="{{ tag_obj.label.lower() }}">
+            <input type="checkbox" id="tag-{{ tag_obj.value }}" name="tag-{{ tag_obj.value }}"
+                   value="{{ tag_obj.value }}" onchange="onTagChange()"/>
+            <label for="tag-{{ tag_obj.value }}">{{ tag_obj.label }}</label>
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- Categoria "Tutti i tag" come fallback -->
+    <div class="category-block" id="cat-all">
+      <div class="category-header" onclick="toggleCategory(this.parentElement)">
+        <h3><span class="cat-icon">📋</span>Tutti i Tag (lista completa)</h3>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="cat-badge" id="badge-all">0 / {{ tags|length }}</span>
+          <span class="cat-toggle">▼</span>
+        </div>
+      </div>
+      <div class="tags-grid">
+        {% for tag_obj in tags %}
+        <div class="tag-chip" data-label="{{ tag_obj.label.lower() }}">
+          <input type="checkbox" id="all-{{ tag_obj.value }}" name="all-{{ tag_obj.value }}"
+                 value="{{ tag_obj.value }}" onchange="syncFromAll(this)"/>
+          <label for="all-{{ tag_obj.value }}">{{ tag_obj.label }}</label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div><!-- /categories -->
+
+</div><!-- /container -->
+
+<!-- Sticky bottom bar -->
+<div id="selected-bar">
+  <div id="sel-count">Tag selezionati: <span id="sel-num">0</span></div>
+  <button id="btn-predict" disabled onclick="runPredict()">
+    🔮 Predici PEGI
+  </button>
+</div>
+
+<!-- Result Modal -->
+<div id="result-overlay" onclick="closeResult(event)">
+  <div id="result-card">
+    <button id="close-result" onclick="closeResultBtn()">✕</button>
+    <div id="pegi-badge">?</div>
+    <div id="result-title"></div>
+    <div id="result-desc"></div>
+    <div id="prob-bars"></div>
+    <div class="active-feats" id="active-feats"></div>
+  </div>
+</div>
+
+<!-- Error toast -->
+<div id="toast"></div>
+
+<script>
+// ── Stato globale ────────────────────────────────────────────────────────────
+const selectedTags = new Set();
+
+// ── Sincronizzazione tag ─────────────────────────────────────────────────────
+function onTagChange() {
+  // Leggi tutti i checkbox nelle categorie specifiche (non "tutti i tag")
+  const checked = [...document.querySelectorAll(
+    '.category-block:not(#cat-all) .tag-chip input[type="checkbox"]:checked'
+  )].map(cb => cb.value);
+
+  selectedTags.clear();
+  checked.forEach(v => selectedTags.add(v));
+
+  // Sincronizza la sezione "Tutti i tag"
+  document.querySelectorAll('#cat-all .tag-chip input').forEach(cb => {
+    cb.checked = selectedTags.has(cb.value);
+  });
+
+  updateUI();
+}
+
+function syncFromAll(cb) {
+  // Sincronizza dal pannello "Tutti i tag" verso le categorie specifiche
+  if (cb.checked) selectedTags.add(cb.value);
+  else selectedTags.delete(cb.value);
+
+  document.querySelectorAll(
+    `.category-block:not(#cat-all) .tag-chip input[value="${CSS.escape(cb.value)}"]`
+  ).forEach(other => { other.checked = cb.checked; });
+
+  updateUI();
+}
+
+function updateUI() {
+  const n = selectedTags.size;
+  document.getElementById('sel-num').textContent = n;
+  document.getElementById('total-count').textContent = `${n} tag selezionati`;
+  document.getElementById('btn-predict').disabled = (n === 0);
+
+  // Aggiorna badge per categoria
+  document.querySelectorAll('.category-block:not(#cat-all)').forEach((block, i) => {
+    const cnt = block.querySelectorAll('input:checked').length;
+    const tot = block.querySelectorAll('input').length;
+    const badge = block.querySelector('.cat-badge');
+    if (badge) badge.textContent = `${cnt} / ${tot}`;
+    if (badge) badge.style.color = cnt > 0 ? '#818cf8' : '';
+  });
+
+  // Badge "tutti"
+  const allBadge = document.getElementById('badge-all');
+  if (allBadge) allBadge.textContent = `${n} / ${document.querySelectorAll('#cat-all .tag-chip').length}`;
+}
+
+// ── Collassa/espandi categoria ───────────────────────────────────────────────
+function toggleCategory(block) {
+  block.classList.toggle('collapsed');
+}
+
+// ── Seleziona / Deseleziona tutti ───────────────────────────────────────────
+function selectAll() {
+  document.querySelectorAll('.tag-chip input[type="checkbox"]').forEach(cb => {
+    cb.checked = true;
+    selectedTags.add(cb.value);
+  });
+  updateUI();
+}
+
+function clearAll() {
+  document.querySelectorAll('.tag-chip input[type="checkbox"]').forEach(cb => {
+    cb.checked = false;
+  });
+  selectedTags.clear();
+  updateUI();
+}
+
+// ── Ricerca tag ───────────────────────────────────────────────────────────────
+document.getElementById('tag-search').addEventListener('input', function() {
+  const q = this.value.trim().toLowerCase();
+  document.querySelectorAll('.tag-chip').forEach(chip => {
+    const label = chip.dataset.label || '';
+    chip.classList.toggle('hidden', q !== '' && !label.includes(q));
+  });
+});
+
+// ── Predizione ───────────────────────────────────────────────────────────────
+async function runPredict() {
+  if (selectedTags.size === 0) return;
+
+  const btn = document.getElementById('btn-predict');
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch('/predict', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ tags: [...selectedTags] })
+    });
+    const data = await resp.json();
+
+    if (!data.success) {
+      showToast(data.error || 'Errore sconosciuto');
+    } else {
+      showResult(data);
+    }
+  } catch(e) {
+    showToast('Errore di rete: ' + e.message);
+  } finally {
+    btn.innerHTML = '🔮 Predici PEGI';
+    btn.disabled = (selectedTags.size === 0);
+  }
+}
+
+// ── Mostra risultato ─────────────────────────────────────────────────────────
+const PEGI_COLORS = {3:'#2ecc71', 7:'#3498db', 12:'#f39c12', 16:'#e67e22', 18:'#e74c3c'};
+
+function showResult(data) {
+  const overlay = document.getElementById('result-overlay');
+  const badge   = document.getElementById('pegi-badge');
+  const title   = document.getElementById('result-title');
+  const desc    = document.getElementById('result-desc');
+  const bars    = document.getElementById('prob-bars');
+  const feats   = document.getElementById('active-feats');
+
+  const pv    = data.predicted_pegi;
+  const color = data.color || PEGI_COLORS[pv] || '#6366f1';
+
+  badge.textContent         = pv;
+  badge.style.background    = color;
+  title.textContent         = `PEGI ${pv}`;
+  title.style.color         = color;
+  desc.textContent          = data.description || '';
+
+  // Barre probabilità
+  const probs = data.probabilities;
+  const order = ['PEGI 3','PEGI 7','PEGI 12','PEGI 16','PEGI 18'];
+  const pegiColors = {3:'#2ecc71',7:'#3498db',12:'#f39c12',16:'#e67e22',18:'#e74c3c'};
+
+  bars.innerHTML = order.map(label => {
+    const pv2    = parseInt(label.split(' ')[1]);
+    const val    = probs[label] ?? 0;
+    const barCol = pegiColors[pv2] || '#6366f1';
+    return `
+      <div class="prob-row">
+        <div class="prob-label">
+          <span>${label}</span>
+          <span>${val.toFixed(1)}%</span>
+        </div>
+        <div class="prob-bar-bg">
+          <div class="prob-bar" style="width:${val}%;background:${barCol}"></div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Feature attive
+  const af = data.active_features || [];
+  feats.innerHTML = af.length > 0
+    ? `<strong>🏷️ Tag riconosciuti dal modello (${af.length}):</strong>${af.join(' · ')}`
+    : `<strong>⚠️ Nessun tag corrisponde alle feature del modello.</strong>`;
+
+  overlay.classList.add('visible');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeResult(e) {
+  if (e.target === document.getElementById('result-overlay')) closeResultBtn();
+}
+function closeResultBtn() {
+  document.getElementById('result-overlay').classList.remove('visible');
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeResultBtn(); });
+
+// ── Toast errore ─────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 4000);
+}
+
+// ── Init UI ──────────────────────────────────────────────────────────────────
+updateUI();
+</script>
+</body>
+</html>
