@@ -6,9 +6,9 @@ app = Flask(__name__)
 
 import numpy as np
 
-MODEL_PATH = 'random_forest_model (1).pkl'
-KMEANS_PATH = 'kmeans_model (4).pkl'
-FEATURES_PATH = 'tag_vocabulary (1).pkl'
+MODEL_PATH = 'models/random_forest_model.pkl'
+KMEANS_PATH = 'models/kmeans_model.pkl'
+FEATURES_PATH = 'models/tag_vocabulary.pkl'
 
 model = None
 km_model = None
