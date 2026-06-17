@@ -1,3 +1,4 @@
+import os
 import joblib
 import pandas as pd
 from flask import Flask, request, jsonify, render_template
@@ -6,9 +7,10 @@ app = Flask(__name__)
 
 import numpy as np
 
-MODEL_PATH = 'models/random_forest_model.pkl'
-KMEANS_PATH = 'models/kmeans_model.pkl'
-FEATURES_PATH = 'models/tag_vocabulary.pkl'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, 'models', 'random_forest_model.pkl')
+KMEANS_PATH = os.path.join(BASE_DIR, 'models', 'kmeans_model.pkl')
+FEATURES_PATH = os.path.join(BASE_DIR, 'models', 'tag_vocabulary.pkl')
 
 model = None
 km_model = None
@@ -27,7 +29,7 @@ init_models()
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', tags=model_features)
 
 @app.route('/predict', methods=['POST'])
 def predict():

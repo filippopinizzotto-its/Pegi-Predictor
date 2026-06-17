@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEGI Predictor | Tag-based PEGI Predictor</title>
+
+    <!-- Google Fonts: Outfit per i titoli, Inter per il testo -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- Foglio di stile CSS esterno -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <header>
+        <h1>PEGI Predictor</h1>
+        <p class="subtitle">Predizione del rating d'età PEGI basata sui tag descrittivi del gioco selezionati
+            dall'utente.</p>
+    </header>
+
+    <main>
+        <!-- Pannello di Input (Sinistro) -->
+        <div class="card">
+            <h2 class="section-title"><span></span>Dati di Input</h2>
+
+            <form id="predict-form" enctype="multipart/form-data">
+                <!-- Selettore Tag (Multi-select Chips) -->
+                <div class="form-group tags-group">
+                    <label>Tag del Gioco (Seleziona uno o più)</label>
+                    <input type="text" id="tag-search" class="tag-search" placeholder="Cerca un tag..."
+                        autocomplete="off">
+                    <div class="genres-grid" id="tags-wrapper">
+                        <!-- Tag popolati dinamicamente via JS -->
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+                        <div class="tag-counter" id="tag-counter"></div>
+                        <button type="button" id="btn-clear" style="background: #141620; border: 1px solid var(--border-color); color: var(--text-muted); padding: 4px 10px; border-radius: 5px; font-size: 0.72rem; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);" onmouseover="this.style.background='rgba(255, 255, 255, 0.03)'; this.style.color='#fff'; this.style.borderColor='rgba(255, 255, 255, 0.1)';" onmouseout="this.style.background='#141620'; this.style.color='var(--text-muted)'; this.style.borderColor='var(--border-color)';">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                                <path d="M3 3v5h5"></path>
+                            </svg>
+                            Ripulisci
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Bottone Predict -->
+                <button type="submit" class="btn-predict" style="margin-top: 1.5rem; width: 100%;">
+                    <span></span> Esegui Predizione PEGI
+                </button>
+            </form>
+        </div>
+
+        <!-- Pannello Risultati (Destro) -->
+        <div class="card" style="justify-content: flex-start;">
+            <h2 class="section-title"><span></span>Risultato Modello</h2>
+
+            <!-- Stato iniziale: placeholder -->
+            <div class="result-placeholder" id="placeholder-box">
+                <div class="pulse-circle">
+                    <img src="{{ url_for('static', filename='pegi/fasce.png') }}" alt="Fasce logo"
+                        class="pulse-icon-img">
+                </div>
+                <p>Nessun dato analizzato. Seleziona uno o più tag e clicca su "Esegui Predizione" per avviare il
+                    classificatore Random Forest.</p>
+            </div>
+
+            <!-- Stato caricamento -->
+            <div class="loading-container" id="loading-box">
+                <div class="spinner"></div>
+                <p style="font-size: 0.95rem; color: var(--text-muted);">Elaborazione tag e calcolo predizione in
+                    corso...</p>
+            </div>
+
+            <!-- Stato Risultato Pronto -->
+            <div class="result-content" id="result-box">
+
+                <!-- Badge PEGI Predetto -->
+                <div class="pegi-hero">
+                    <img id="res-pegi-badge" class="pegi-badge-img" src="" alt="PEGI rating">
+                    <div class="pegi-info-text">
+                        <span class="pegi-label-title">Predizione Random Forest</span>
+                        <span class="pegi-class-title" id="res-pegi-title">PEGI 18</span>
+                    </div>
+                </div>
+
+                <!-- Class Probabilities -->
+                <div class="form-group">
+                    <label>Probabilità di Classificazione per Fascia</label>
+                    <div class="prob-list" id="res-prob-list">
+                        <!-- Popolato dinamicamente da JS -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+
+
+    <!-- Dati dei tag passati dal backend -->
+    <script id="tags-data" type="application/json">{{ tags|tojson | safe }}</script>
+
+    <!-- Logica JavaScript per interattività e chiamata API -->
+    <script>
+        // Lista dei tag supportati dal modello Random Forest (caricata dinamicamente dal backend)
+        const tagsModel = JSON.parse(document.getElementById('tags-data').textContent);
+
+        // Mappa nomi tag inglese -> italiano per la visualizzazione
+        const tagDisplay = {
+            'Shooter': 'Sparatutto',
+            'Adventure': 'Avventura',
+            'Arcade': 'Arcade',
+            'Action': 'Azione',
+            'Simulation': 'Simulazione',
+            'Strategy': 'Strategia',
+            'Sports': 'Sport',
+            'Horror': 'Horror',
+            'Puzzle': 'Rompicapo',
+            'RPG': 'GDR',
+            'FPS': 'FPS',
+            'Fighting': 'Picchiaduro',
+            'Platformer': 'Platform',
+            'Stealth': 'Furtività',
+            'Survival': 'Sopravvivenza',
+            'Racing': 'Corse',
+            'Sandbox': 'Sandbox',
+            'Open World': 'Mondo Aperto',
+            'Multiplayer': 'Multigiocatore',
+            'Singleplayer': 'Giocatore Singolo',
+            'Co-op': 'Cooperativo',
+            'Free to Play': 'Free to Play',
+            'Early Access': 'Accesso Anticipato',
+            'Violent': 'Violento',
+            'Gore': 'Violenza Esplicita',
+            'Nudity': 'Nudità',
+            'Sexual Content': 'Contenuti Sessuali',
+            'Fantasy': 'Fantasy',
+            'Sci-fi': 'Fantascienza',
+            'Casual': 'Casuale',
+            'Indie': 'Indie',
+            'Controller': 'Controller',
+            'VR': 'Realtà Virtuale',
+            'Music': 'Musica',
+            'Comedy': 'Commedia',
+            'Drama': 'Drammatico',
+            'Mystery': 'Mistero',
+            'Detective': 'Investigativo',
+            'Atmospheric': 'Atmosferico',
+            'Exploration': 'Esplorazione',
+            'Crafting': 'Artigianato',
+            'Building': 'Costruzione',
+            'Management': 'Gestione',
+            'Economy': 'Economia',
+            'Resource Management': 'Gestione Risorse',
+            'City Builder': 'City Builder',
+            'Base Building': 'Costruzione Basi',
+            'Flight': 'Volo',
+            'Driving': 'Guida',
+            'Space': 'Spazio',
+            'War': 'Guerra',
+            'Military': 'Militare',
+            'Historical': 'Storico',
+            'Medieval': 'Medievale',
+            'Retro': 'Retro',
+            'Pixel Graphics': 'Grafica Pixel',
+            'Cartoon': 'Cartoon',
+            'Cartoony': 'Stile Fumetto',
+            'Colorful': 'Colorato',
+            'Beautiful': 'Bellissimo',
+            'Dark': 'Oscuro',
+            'Cyberpunk': 'Cyberpunk',
+            'Post-apocalyptic': 'Post-apocalittico',
+            'Zombies': 'Zombie',
+            'Anime': 'Anime',
+            'Cute': 'Carino',
+            'Funny': 'Divertente',
+            'Difficult': 'Difficile',
+            'Relaxing': 'Rilassante',
+            'Competitive': 'Competitivo',
+            'Tactical': 'Tattico',
+            'Roguelike': 'Roguelike',
+            'Roguelite': 'Roguelite',
+            'Metroidvania': 'Metroidvania',
+            'Story Rich': 'Ricco di Storia',
+            'Multiple Endings': 'Finali Multipli',
+            'Choices Matter': 'Scelte Importanti',
+            'Emotional': 'Emozionante',
+            'Great Soundtrack': 'Ottima Colonna Sonora',
+            'Soundtrack': 'Colonna Sonora',
+            'Remake': 'Remake',
+            'Classic': 'Classico',
+            'Old School': 'Vecchia Scuola'
+        };
+
+        // Mappatura descrittiva dei PEGI
+        const pegiDescriptions = {
+            3: "Adatto a tutte le età. Contiene solo violenza molto lieve in contesti comici.",
+            7: "Adatto ai bambini. Può contenere scene o suoni spaventosi, o violenza lieve.",
+            12: "Adatto a un pubblico dai 12 anni in su. Mostra violenza di stampo fantasy o non realistica.",
+            16: "Adatto ai ragazzi. Presenta violenza realistica, linguaggio scurrile o allusività sessuale.",
+            18: "Destinato esclusivamente ad adulti. Contiene violenza esplicita, attività illegali o nudità."
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const tagsWrapper = document.getElementById('tags-wrapper');
+            const predictForm = document.getElementById('predict-form');
+
+            // Box di stato destro
+            const placeholderBox = document.getElementById('placeholder-box');
+            const loadingBox = document.getElementById('loading-box');
+            const resultBox = document.getElementById('result-box');
+
+            // Search bar
+            const tagSearch = document.getElementById('tag-search');
+            const tagCounter = document.getElementById('tag-counter');
+
+            // 1. Popola dinamicamente i tag nella UI
+            const allChips = [];
+            tagsModel.forEach(tag => {
+                const chip = document.createElement('div');
+                chip.className = 'genre-chip';
+                chip.textContent = tagDisplay[tag] || tag;
+                chip.dataset.tag = tag;
+                chip.addEventListener('click', () => {
+                    chip.classList.toggle('selected');
+                    updateCounter();
+                });
+                tagsWrapper.appendChild(chip);
+                allChips.push(chip);
+            });
+
+            function updateCounter() {
+                const selected = document.querySelectorAll('.genre-chip.selected').length;
+                const visible = document.querySelectorAll('.genre-chip:not(.hidden)').length;
+                tagCounter.textContent = selected
+                    ? `${selected} selezionati (${visible} visibili)`
+                    : `${visible} tag disponibili`;
+            }
+
+            tagSearch.addEventListener('input', () => {
+                const q = tagSearch.value.toLowerCase();
+                allChips.forEach(chip => {
+                    const display = chip.textContent.toLowerCase();
+                    chip.classList.toggle('hidden', q && !display.includes(q));
+                });
+                updateCounter();
+            });
+
+            updateCounter();
+
+            // Clear button logic
+            const btnClear = document.getElementById('btn-clear');
+            btnClear.addEventListener('click', () => {
+                allChips.forEach(chip => chip.classList.remove('selected'));
+                updateCounter();
+            });
+
+            // 2. Invio del Form per predizione al server Flask
+            predictForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                // Validazione: almeno un tag selezionato
+                const selectedChips = document.querySelectorAll('.genre-chip.selected');
+                if (!selectedChips.length) {
+                    alert("Per favore, seleziona almeno un tag per effettuare la predizione.");
+                    return;
+                }
+
+                // Cambio di stato UI a "Caricamento"
+                placeholderBox.style.display = 'none';
+                resultBox.classList.remove('show');
+                loadingBox.style.display = 'flex';
+
+                // Costruzione FormData per la chiamata API
+                const formData = new FormData();
+                selectedChips.forEach(chip => {
+                    formData.append('tags', chip.dataset.tag);
+                });
+
+                try {
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        renderResults(data);
+                    } else {
+                        alert("Errore del server: " + data.error);
+                        resetToInitialState();
+                    }
+
+                } catch (error) {
+                    console.error("Errore durante la chiamata API:", error);
+                    alert("Si è verificato un errore di connessione con il server Flask.");
+                    resetToInitialState();
+                }
+            });
+
+            function resetToInitialState() {
+                loadingBox.style.display = 'none';
+                resultBox.classList.remove('show');
+                placeholderBox.style.display = 'flex';
+            }
+
+            function renderResults(data) {
+                // Nascondi caricamento
+                loadingBox.style.display = 'none';
+
+                // Imposta l'immagine statica delle fasce
+                const badge = document.getElementById('res-pegi-badge');
+                badge.src = "{{ url_for('static', filename='pegi/fasce.png') }}";
+                badge.alt = 'Classificazione per Fasce';
+
+                // Mostra titolo della fascia predetta (Bambino/Teenager/Adulto)
+                const title = document.getElementById('res-pegi-title');
+                title.textContent = data.prediction;
+
+                // Render delle Probabilità per le 3 fasce
+                const probList = document.getElementById('res-prob-list');
+                probList.innerHTML = '';
+
+                // Le nostre fasce desiderate in ordine di visualizzazione
+                const fasce = ['Bambino', 'Teenager', 'Adulto'];
+
+                fasce.forEach(fascia => {
+                    const probability = data.probabilities[fascia] || 0.0;
+                    const isWinner = fascia === data.prediction;
+                    const item = document.createElement('div');
+                    item.className = `prob-item ${isWinner ? 'winner' : ''}`;
+
+                    item.innerHTML = `
+                        <div class="prob-meta">
+                            <span class="prob-label">${fascia}</span>
+                            <span class="prob-val">${probability}%</span>
+                        </div>
+                        <div class="prob-bar-bg">
+                            <div class="prob-bar-fill" style="width: 0%;"></div>
+                        </div>
+                    `;
+
+                    probList.appendChild(item);
+
+                    // Animiamo il riempimento della barra
+                    setTimeout(() => {
+                        item.querySelector('.prob-bar-fill').style.width = `${probability}%`;
+                    }, 50);
+                });
+
+                // Mostra il pannello dei risultati con effetto dissolvenza
+                resultBox.classList.add('show');
+            }
+        });
+    </script>
+</body>
+
+</html>
